@@ -2,196 +2,122 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1.0, maximum-scale=1.0">
-  <title>Floating Face Filter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebAR Flying Face Filter</title>
+  
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+  
   <style>
-    html, body { margin: 0; padding: 0; overflow: hidden; }
-    canvas#mainCanvas { position: absolute; top: 0; left: 0; }
-    #start-btn {
-      position: fixed;
-      bottom: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(255,255,255,0.8);
-      border: none;
-      padding: 10px 20px;
-      border-radius: 5px;
-      cursor: pointer;
-      z-index: 1000;
-      display: none;
+    body { 
+      margin: 0; 
+      overflow: hidden; 
+      background-color: #000; 
     }
-    #error {
-      position: fixed;
-      bottom: 70px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: #ef4444;
-      font-size: 14px;
-      display: none;
+    /* Make the canvas fill the mobile screen */
+    canvas { 
+      display: block; 
+      width: 100vw; 
+      height: 100vh; 
+      object-fit: cover; 
+      transform: scaleX(-1); /* Mirrors the camera naturally */
+    }
+    .hidden { 
+      display: none; 
     }
   </style>
 </head>
 <body>
-  <!-- Background Video Placeholder -->
-  <video id="bg-video" autoplay muted loop playsinline style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; z-index: -1;">
+
+  <video id="input_video" class="hidden" autoplay playsinline></video>
+  
+  <video id="bg_video" class="hidden" loop autoplay muted playsinline>
     <source src="flying.mp4" type="video/mp4">
-    Your browser does not support the video tag.
   </video>
+  
+  <canvas id="output_canvas"></canvas>
 
-  <!-- AR Container -->
-  <div id="face-container" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0;"></div>
-
-  <!-- UI Elements -->
-  <button id="start-btn">Tap to Start</button>
-  <span id="error">Enable camera for AR</span>
-  <canvas id="mainCanvas"></canvas>
-
-  <!-- Third-party Scripts -->
-  <script src="https://cdn.jsdelivr.net/npm/mindar-face@1.1.5/dist/mindar-face.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.min.js"></script>
-
-  <!-- Application Script -->
   <script>
-    // DOM Elements
-    const startBtn = document.getElementById('start-btn');
-    const errorEl = document.getElementById('error');
-    const faceContainer = document.getElementById('face-container');
-    const canvas = document.getElementById('mainCanvas');
-    const context = canvas.getContext('2d');
+    const videoElement = document.getElementById('input_video');
+    const bgVideo = document.getElementById('bg_video');
+    const canvasElement = document.getElementById('output_canvas');
+    const canvasCtx = canvasElement.getContext('2d');
 
-    // Request permission on load
-    document.addEventListener('DOMContentLoaded', () => {
-      startBtn.style.display = 'block';
+    // Force background video to play on mobile
+    bgVideo.play();
 
-      startBtn.addEventListener('click', async () => {
-        errorEl.style.display = 'none';
-        try {
-          await startAR(); // start face tracking and render loop
-        } catch (e) {
-          console.error('Failed to start AR:', e);
-          errorEl.textContent = 'AR init failed';
-          errorEl.style.display = 'block';
+    // These indices form a perfect loop around the outer edge of the face in MediaPipe
+    const FACE_OVAL_INDICES = [
+      10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 
+      148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109
+    ];
+
+    function onResults(results) {
+      canvasElement.width = videoElement.videoWidth;
+      canvasElement.height = videoElement.videoHeight;
+
+      canvasCtx.save();
+      canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
+
+      // 1. Draw the flying background video FIRST
+      canvasCtx.drawImage(bgVideo, 0, 0, canvasElement.width, canvasElement.height);
+
+      // 2. If a face is detected, cut out just the face and draw it over the background
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        const landmarks = results.multiFaceLandmarks[0];
+
+        // Create a clipping path using the face oval points
+        canvasCtx.beginPath();
+        for (let i = 0; i < FACE_OVAL_INDICES.length; i++) {
+          const index = FACE_OVAL_INDICES[i];
+          const point = landmarks[index];
+          // Scale normalized coordinates to canvas dimensions
+          const x = point.x * canvasElement.width;
+          const y = point.y * canvasElement.height;
+          
+          if (i === 0) {
+            canvasCtx.moveTo(x, y);
+          } else {
+            canvasCtx.lineTo(x, y);
+          }
         }
-      });
+        canvasCtx.closePath();
+        
+        // Apply the clipping mask
+        canvasCtx.clip();
 
-      // Initialize WebGL render context
-      if (navigator.gpu) {
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
-        canvas.style.display = 'block';
-        context.fillStyle = '#000000';
-        context.fillRect(0, 0, canvas.width, canvas.height);
-      } else {
-        errorEl.style.display = 'block';
+        // Draw the webcam feed (but because of the clip, ONLY the face oval will be drawn)
+        canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
       }
-    });
 
-    // Three.js Setup
-    const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(45, window.innerWidth/window.innerHeight, 0.1, 100);
-    camera.position.z = 50;
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setClearColor(0x000000, 0);
-    // Insert the WebGL canvas into the AR container so it appears over the video
-    faceContainer.appendChild(renderer.domElement);
-
-    const clock = new THREE.Clock();
-    const facePose = { position: [0, 0, 0] };
-    let trackingActive = false;
-    const emojiGroup = new THREE.Group();
-    scene.add(emojiGroup);
-
-    // Add initial emojis
-    addEmoji('sparkles', 0.5);
-    addEmoji('star', 0.7);
-
-    function addEmoji(name, radius = 0.5) {
-      const texture = new THREE.TextureLoader().load(`emojis/${name}.png`);
-      const material = new THREE.MeshBasicMaterial({
-        map: texture,
-        transparent: true,
-        depthWrite: false
-      });
-      const geometry = new THREE.PlaneGeometry(1, 1);
-      const mesh = new THREE.Mesh(geometry, material);
-      mesh.position.copy(new THREE.Vector3(0, 0, radius));
-      emojiGroup.add(mesh);
+      canvasCtx.restore();
     }
 
-    // Animation logic
-    function animate() {
-      requestAnimationFrame(animate);
-      // Update MindAR internal state and feed its camera texture to Three.js
-      mindar.render(renderer);
-
-      if (trackingActive && facePose.position) {
-        updateOrbit(facePose.position);
-      }
-      // Render the Three.js scene (emoji group)
-      renderer.render(scene, camera);
-    }
-
-    // Orbit update with spring physics
-    function updateOrbit(targetPos) {
-      const children = emojiGroup.children;
-      for (const emoji of children) {
-        const dx = targetPos[0] - emoji.position[0];
-        const dy = targetPos[1] - emoji.position[1];
-        const distance = Math.sqrt(dx*dx + dy*dy);
-
-        const stability = 0.15;
-        const newX = emoji.position[0] + (dx / 100) * stability;
-        const newY = emoji.position[1] + (dy / 100) * stability;
-
-        emoji.position.set(
-          targetPos[0] + Math.cos(clock.getElapsedTime()) * 0.5 + newX,
-          targetPos[1] + Math.sin(clock.getElapsedTime()) * 0.5 + newY,
-          5
-        );
-      }
-    }
-
-    // Add event listeners
-    window.addEventListener('resize', () => {
-      camera.aspect = window.innerWidth/window.innerHeight;
-      camera.updateProjectionMatrix();
-      renderer.setSize(window.innerWidth, window.innerHeight);
+    // Initialize MediaPipe Face Mesh instead of Selfie Segmentation
+    const faceMesh = new FaceMesh({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+    }});
+    
+    faceMesh.setOptions({
+      maxNumFaces: 1, // Only track one face for performance
+      refineLandmarks: false, // Set to false to boost mobile performance
+      minDetectionConfidence: 0.5,
+      minTrackingConfidence: 0.5
     });
+    
+    faceMesh.onResults(onResults);
 
-    // Declare mindar variable (will be initialized after renderer is ready)
-    let mindar;
-    // Initialize MindAR now that renderer and container exist
-    mindar = new MindAR.Face({
-      container: faceContainer,
-      uiStart: startBtn,
-      maxTrackQueueSize: 5,
-      mirror: false,
-      uiError: errorEl
+    // Initialize the Camera
+    const camera = new Camera(videoElement, {
+      onFrame: async () => {
+        await faceMesh.send({image: videoElement});
+      },
+      width: 1280,
+      height: 720,
+      facingMode: "user"
     });
-    // Attach Three.js renderer to MindAR so it can render the camera feed
-    mindar.attachRenderer(renderer);
-
-    mindar.on('-track', (pose) => {
-      facePose.position = pose.position;
-      trackingActive = true;
-    });
-
-    mindar.on('-track-lost', () => {
-      trackingActive = false;
-    });
-
-    // Helper to start AR and animation loop
-    async function startAR() {
-      await mindar.start();
-      animate();
-    }
-
-    // No extra click listener needed – the button handler calls startAR().
-
-    // Remove global function declaration – not needed
-    // function initAR() {}
-
+    
+    camera.start();
   </script>
 </body>
 </html>
