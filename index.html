@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Flying Filter</title>
+</head>
+<body>
+  <button id="start-button">Start Camera</button>
+  <div id="error-message" style="color:red;margin-top:10px;"></div>
+  <h1>Flying Filter Placeholder</h1>
+  <!-- Video placeholder -->
+  <video id="demo" controls src="assets/video/placeholder.mp4"></video>
+  <!-- Model placeholder -->
+  <script src="assets/model/placeholder.bin"></script>
+  <script type="module" src="src/ui.js"></script>
+  <script type="module">
+    import { initUI } from './src/ui.js';
+    initUI();
+  </script>
+</body>
+</html>

@@ -1,0 +1,13 @@
+{
+  "name": "flying-filter",
+  "version": "0.1.0",
+  "description": "Placeholder project for Flying Filter",
+  "main": "index.js",
+  "scripts": {
+    "start": "echo \"Start script placeholder\"",
+    "test": "echo \"No tests yet\""
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {}
+}
