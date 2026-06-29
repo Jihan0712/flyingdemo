@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WebAR Character Face Swap</title>
+  <title>WebAR Stabilized Face Tracker</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
@@ -19,7 +19,6 @@
       width: 100vw; 
       height: 100vh; 
       object-fit: cover; 
-      transform: scaleX(-1);
     }
     .hidden { 
       display: none; 
@@ -29,7 +28,6 @@
 <body>
 
   <video id="input_video" class="hidden" autoplay playsinline></video>
-  
   <video id="bg_video" class="hidden" loop autoplay muted playsinline>
     <source src="TUNGTUNG2.mp4" type="video/mp4">
   </video>
@@ -42,22 +40,83 @@
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d');
 
+    // --- SMOOTHING VARIABLES ---
+    // Lower number = smoother but lags behind. Higher number = faster but more jitter.
+    const CUP_SMOOTHING = 0.10;  // Heavy smoothing for the cartoon cup
+    const USER_SMOOTHING = 0.30; // Lighter smoothing for your webcam face
+
+    // AI's raw guesses
+    let rawCup = { x: 0.50, y: 0.52, size: 0.35 }; 
+    // The actual smoothed coordinates drawn on screen
+    let smoothCup = { x: 0.50, y: 0.52, size: 0.35 }; 
+
+    let smoothUser = { cx: null, cy: null, w: null };
+
+    // ---------------------------------------------------------
+    // SYSTEM 1: BACKGROUND VIDEO TRACKER
+    // ---------------------------------------------------------
+    const bgFaceMesh = new FaceMesh({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+    }});
+    bgFaceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.4, minTrackingConfidence: 0.4 });
+
+    bgFaceMesh.onResults((results) => {
+      if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        const landmarks = results.multiFaceLandmarks[0];
+        let minX = 1, minY = 1, maxX = 0, maxY = 0;
+        for (const pt of landmarks) {
+          if (pt.x < minX) minX = pt.x;
+          if (pt.x > maxX) maxX = pt.x;
+          if (pt.y < minY) minY = pt.y;
+          if (pt.y > maxY) maxY = pt.y;
+        }
+        // Instantly update the raw guess
+        rawCup.x = (minX + maxX) / 2;
+        rawCup.y = (minY + maxY) / 2;
+        rawCup.size = (maxX - minX);
+      }
+    });
+
+    let isTrackingVideo = false;
+    async function processVideoFrame() {
+      if (!bgVideo.paused && !bgVideo.ended) {
+        await bgFaceMesh.send({image: bgVideo});
+        requestAnimationFrame(processVideoFrame);
+      } else {
+        isTrackingVideo = false;
+      }
+    }
+    
+    bgVideo.addEventListener('play', () => {
+      if (!isTrackingVideo) {
+        isTrackingVideo = true;
+        processVideoFrame();
+      }
+    });
     bgVideo.play();
 
-    // --- ADJUST THESE TO FIT THE COFFEE CUP PERFECTLY ---
-    const TARGET_X_PERCENT = 0.50;    // 0.50 = center of screen horizontally
-    const TARGET_Y_PERCENT = 0.55;    // 0.55 = slightly below center vertically (where the cup is)
-    const TARGET_SIZE_PERCENT = 0.35; // Face takes up 35% of the screen width
 
-    function onResults(results) {
+    // ---------------------------------------------------------
+    // SYSTEM 2: WEBCAM TRACKER
+    // ---------------------------------------------------------
+    const FACE_OVAL_INDICES = [
+      10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 
+      148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109
+    ];
+
+    const webcamFaceMesh = new FaceMesh({locateFile: (file) => {
+      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
+    }});
+    webcamFaceMesh.setOptions({ maxNumFaces: 1, refineLandmarks: false, minDetectionConfidence: 0.5, minTrackingConfidence: 0.5 });
+
+    webcamFaceMesh.onResults((results) => {
       canvasElement.width = window.innerWidth;
       canvasElement.height = window.innerHeight;
 
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-      // 1. Draw the coffee cup background video
-      // Calculate drawing dimensions to "cover" the canvas like CSS object-fit: cover
+      // 1. Draw Background Video
       const bgRatio = bgVideo.videoWidth / bgVideo.videoHeight;
       const canvasRatio = canvasElement.width / canvasElement.height;
       let drawWidth, drawHeight, startX, startY;
@@ -75,11 +134,15 @@
       }
       canvasCtx.drawImage(bgVideo, startX, startY, drawWidth, drawHeight);
 
-      // 2. Process face tracking
+      // APPLY SHOCK ABSORBERS (Smoothing Math)
+      smoothCup.x += (rawCup.x - smoothCup.x) * CUP_SMOOTHING;
+      smoothCup.y += (rawCup.y - smoothCup.y) * CUP_SMOOTHING;
+      smoothCup.size += (rawCup.size - smoothCup.size) * CUP_SMOOTHING;
+
+      // 2. Process Webcam Face
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
         const landmarks = results.multiFaceLandmarks[0];
 
-        // Find your face bounding box in the webcam
         let minX = 1, minY = 1, maxX = 0, maxY = 0;
         for (const point of landmarks) {
           if (point.x < minX) minX = point.x;
@@ -88,67 +151,67 @@
           if (point.y > maxY) maxY = point.y;
         }
 
-        // Calculate your real face size and center in the webcam feed
-        const faceWidth = (maxX - minX) * videoElement.videoWidth;
-        const faceHeight = (maxY - minY) * videoElement.videoHeight;
-        const faceCenterX = ((minX + maxX) / 2) * videoElement.videoWidth;
-        const faceCenterY = ((minY + maxY) / 2) * videoElement.videoHeight;
+        const vidW = videoElement.videoWidth;
+        const vidH = videoElement.videoHeight;
+        
+        const rawUserW = (maxX - minX) * vidW;
+        const rawUserCX = ((minX + maxX) / 2) * vidW;
+        const rawUserCY = ((minY + maxY) / 2) * vidH;
 
-        // Calculate where the face should be drawn over the coffee cup
-        const targetX = canvasElement.width * TARGET_X_PERCENT;
-        const targetY = canvasElement.height * TARGET_Y_PERCENT;
-        const targetWidth = canvasElement.width * TARGET_SIZE_PERCENT;
-        const targetHeight = targetWidth * (faceHeight / faceWidth);
+        // Initialize user smoothing on first frame
+        if (smoothUser.cx === null) {
+          smoothUser.cx = rawUserCX;
+          smoothUser.cy = rawUserCY;
+          smoothUser.w = rawUserW;
+        }
 
-        // Figure out how much to shrink/grow your webcam feed to fit the cup
-        const scale = targetWidth / faceWidth;
+        // Apply smoothing to your own face tracking
+        smoothUser.cx += (rawUserCX - smoothUser.cx) * USER_SMOOTHING;
+        smoothUser.cy += (rawUserCY - smoothUser.cy) * USER_SMOOTHING;
+        smoothUser.w += (rawUserW - smoothUser.w) * USER_SMOOTHING;
 
-        // 3. Create the clipping mask at the COFFEE CUP location
+        // Apply Target Coordinates from the SMOOTHED values
+        const targetX = startX + (drawWidth * smoothCup.x);
+        const targetY = startY + (drawHeight * smoothCup.y);
+        const targetWidth = drawWidth * smoothCup.size;
+        const scale = targetWidth / smoothUser.w;
+
+        canvasCtx.save();
+        
+        // Translate to the target location
+        canvasCtx.translate(targetX, targetY);
+        // Apply mirror effect strictly to the face (-scale)
+        canvasCtx.scale(-scale, scale);
+        canvasCtx.translate(-smoothUser.cx, -smoothUser.cy);
+
+        // Trace and clip the face oval
         canvasCtx.beginPath();
-        canvasCtx.ellipse(
-          targetX, 
-          targetY, 
-          targetWidth * 0.6,  // Cutout width
-          targetHeight * 0.7, // Cutout height
-          0, 0, 2 * Math.PI
-        );
+        for (let i = 0; i < FACE_OVAL_INDICES.length; i++) {
+          const index = FACE_OVAL_INDICES[i];
+          const point = landmarks[index];
+          const x = point.x * vidW;
+          const y = point.y * vidH;
+          if (i === 0) canvasCtx.moveTo(x, y);
+          else canvasCtx.lineTo(x, y);
+        }
         canvasCtx.closePath();
         canvasCtx.clip();
 
-        // 4. Shift, Scale, and Draw the webcam video!
-        // This math guarantees your face always lands exactly inside the mask above
-        canvasCtx.translate(targetX, targetY);
-        canvasCtx.scale(scale, scale);
-        canvasCtx.translate(-faceCenterX, -faceCenterY);
-        
-        canvasCtx.drawImage(results.image, 0, 0, videoElement.videoWidth, videoElement.videoHeight);
+        // Draw webcam feed
+        canvasCtx.drawImage(results.image, 0, 0, vidW, vidH);
+        canvasCtx.restore();
       }
-
       canvasCtx.restore();
-    }
-
-    const faceMesh = new FaceMesh({locateFile: (file) => {
-      return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
-    }});
-    
-    faceMesh.setOptions({
-      maxNumFaces: 1,
-      refineLandmarks: false,
-      minDetectionConfidence: 0.5,
-      minTrackingConfidence: 0.5
     });
-    
-    faceMesh.onResults(onResults);
 
     const camera = new Camera(videoElement, {
       onFrame: async () => {
-        await faceMesh.send({image: videoElement});
+        await webcamFaceMesh.send({image: videoElement});
       },
       width: 1280,
       height: 720,
       facingMode: "user"
     });
-    
     camera.start();
   </script>
 </body>
