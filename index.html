@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Top Cafe AR - Capture & Record</title>
+  <title>Top Cafe AR - iOS Fix</title>
   
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
   <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
@@ -14,9 +14,8 @@
       overflow: hidden; 
       background-color: #000; 
       font-family: sans-serif;
-      touch-action: none; /* Prevents pull-to-refresh on mobile */
+      touch-action: none; 
     }
-    
     canvas { 
       display: block; 
       width: 100vw; 
@@ -24,11 +23,17 @@
       object-fit: cover; 
     }
     
-    .hidden { 
-      display: none !important; 
+    /* CRITICAL IOS FIX: Never use display: none for media elements! 
+       Safari will pause them to save battery. We hide them with CSS positioning instead. */
+    .hidden-media { 
+      position: absolute !important;
+      width: 1px !important;
+      height: 1px !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      z-index: -9999 !important;
     }
 
-    /* Screen Flash Effect for Photos */
     #flash {
       position: absolute;
       top: 0; left: 0; width: 100vw; height: 100vh;
@@ -38,12 +43,10 @@
       transition: opacity 0.2s ease-out;
       z-index: 50;
     }
-
-    /* Capture Button UI */
     #capture-btn-container {
       position: absolute;
-      bottom: 40px;
-      left: 50%;
+      bottom: 10%;
+      left: 15%;
       transform: translateX(-50%);
       z-index: 100;
       display: flex;
@@ -51,7 +54,6 @@
       align-items: center;
       gap: 10px;
     }
-
     #capture-btn {
       width: 70px;
       height: 70px;
@@ -63,8 +65,9 @@
       display: flex;
       justify-content: center;
       align-items: center;
+      opacity: 0.3;
+      pointer-events: none;
     }
-
     #capture-inner {
       width: 50px;
       height: 50px;
@@ -72,19 +75,16 @@
       border-radius: 50%;
       transition: all 0.2s ease;
     }
-
-    /* Animation state when holding to record */
     #capture-btn.recording {
       border-color: #ff3b30;
       transform: scale(1.1);
     }
     #capture-btn.recording #capture-inner {
       background: #ff3b30;
-      border-radius: 10px; /* Turns into a square stop button */
+      border-radius: 10px; 
       width: 30px;
       height: 30px;
     }
-
     .hint-text {
       color: white;
       font-size: 12px;
@@ -96,12 +96,12 @@
 </head>
 <body>
 
-  <video id="input_video" class="hidden" autoplay playsinline webkit-playsinline></video>
-  <video id="bg_video" class="hidden" loop muted autoplay playsinline webkit-playsinline>
+  <video id="input_video" class="hidden-media" autoplay playsinline webkit-playsinline></video>
+  <video id="bg_video" class="hidden-media" loop muted autoplay playsinline webkit-playsinline>
     <source src="TUNGTUNG2.mp4" type="video/mp4">
   </video>
-  <img id="headline-img" class="hidden" src="headline.jpg" crossorigin="anonymous">
-  <img id="logo-img" class="hidden" src="top-cafe-logo.png" crossorigin="anonymous">
+  <img id="headline-img" class="hidden-media" src="headline.jpg" crossorigin="anonymous">
+  <img id="logo-img" class="hidden-media" src="top-cafe-logo.png" crossorigin="anonymous">
 
   <div id="flash"></div>
   <canvas id="output_canvas"></canvas>
@@ -110,7 +110,6 @@
     <div id="capture-btn">
       <div id="capture-inner"></div>
     </div>
-    <div class="hint-text">Tap for Photo • Hold for Video</div>
   </div>
 
   <script>
@@ -119,11 +118,8 @@
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d', { willReadFrequently: true });
     
-    // Graphic Assets
     const headlineImg = document.getElementById('headline-img');
     const logoImg = document.getElementById('logo-img');
-
-    // UI Elements
     const captureBtn = document.getElementById('capture-btn');
     const flash = document.getElementById('flash');
 
@@ -133,20 +129,17 @@
     let smoothCup = { x: 0.50, y: 0.52, size: 0.35 }; 
     let smoothUser = { cx: null, cy: null, w: null };
 
-    // --- Media Recording Setup ---
     let mediaRecorder;
     let recordedChunks = [];
     let isRecording = false;
     let holdTimeout;
 
-    // Try to find the best video format supported by the user's browser (especially iOS vs Android)
     let mimeType = 'video/webm';
     if (MediaRecorder.isTypeSupported('video/mp4')) {
-      mimeType = 'video/mp4'; // Better for iOS Safari
+      mimeType = 'video/mp4'; 
     }
 
-    // Capture the Canvas stream at 30 frames per second
-    const canvasStream = canvasElement.captureStream(30);
+    const canvasStream = canvasElement.captureStream();
 
     function startRecording() {
       recordedChunks = [];
@@ -157,12 +150,10 @@
       };
       
       mediaRecorder.onstop = () => {
-        // When stopped, package the video and download it automatically
         const blob = new Blob(recordedChunks, { type: mimeType });
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        // Check if iOS, save as .mp4, otherwise .webm
         a.download = mimeType === 'video/mp4' ? 'TopCafe_AR.mp4' : 'TopCafe_AR.webm';
         document.body.appendChild(a);
         a.click();
@@ -170,15 +161,13 @@
         document.body.removeChild(a);
       };
       
-      mediaRecorder.start();
+      mediaRecorder.start(100); 
     }
 
     function takePhoto() {
-      // Trigger flash animation
       flash.style.opacity = '1';
       setTimeout(() => { flash.style.opacity = '0'; }, 150);
 
-      // Extract image and download
       const dataUrl = canvasElement.toDataURL('image/png');
       const a = document.createElement('a');
       a.href = dataUrl;
@@ -188,12 +177,10 @@
       document.body.removeChild(a);
     }
 
-    // --- Capture Button Events ---
     const handlePress = (e) => {
       e.preventDefault();
       captureBtn.style.transform = 'scale(0.9)';
       
-      // If held for 400ms, consider it a video recording
       holdTimeout = setTimeout(() => {
         isRecording = true;
         captureBtn.classList.add('recording');
@@ -203,28 +190,24 @@
 
     const handleRelease = (e) => {
       e.preventDefault();
-      clearTimeout(holdTimeout); // Cancel the timer
+      clearTimeout(holdTimeout); 
       captureBtn.style.transform = 'scale(1)';
 
       if (isRecording) {
-        // Stop Video
         isRecording = false;
         captureBtn.classList.remove('recording');
         if (mediaRecorder && mediaRecorder.state !== 'inactive') {
           mediaRecorder.stop();
         }
       } else {
-        // It was a quick tap -> Take Photo
         takePhoto();
       }
     };
 
-    // Bind touch and mouse events for universal mobile/desktop support
     captureBtn.addEventListener('pointerdown', handlePress);
     captureBtn.addEventListener('pointerup', handleRelease);
     captureBtn.addEventListener('pointerleave', handleRelease);
 
-    // --- SYSTEM 1: BACKGROUND TRACKER ---
     const bgFaceMesh = new FaceMesh({locateFile: (file) => {
       return `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`;
     }});
@@ -263,7 +246,6 @@
       }
     });
 
-    // --- SYSTEM 2: WEBCAM TRACKER & COMPOSITING ---
     const FACE_OVAL_INDICES = [
       10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379, 378, 400, 377, 152, 
       148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127, 162, 21, 54, 103, 67, 109
@@ -281,7 +263,6 @@
       canvasCtx.save();
       canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-      // 1. Draw Background Video
       const bgRatio = bgVideo.videoWidth / bgVideo.videoHeight;
       const canvasRatio = canvasElement.width / canvasElement.height;
       let drawWidth, drawHeight, startX, startY;
@@ -297,14 +278,14 @@
         startX = 0;
         startY = (canvasElement.height - drawHeight) / 2;
       }
+      
+      // Draw Background Video (If it is blank, iOS is blocking it!)
       canvasCtx.drawImage(bgVideo, startX, startY, drawWidth, drawHeight);
 
-      smoothCup.x += (rawCup.x - smoothCup.x) * CUP_SMOOTHING;
-      smoothCup.y += (rawCup.y - smoothCup.y) * CUP_SMOOTHING;
-      smoothCup.size += (rawCup.size - smoothCup.size) * CUP_SMOOTHING;
-
-      // 2. Draw User Face Mask
       if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
+        captureBtn.style.opacity = '1';
+        captureBtn.style.pointerEvents = 'auto';
+
         const landmarks = results.multiFaceLandmarks[0];
 
         let minX = 1, minY = 1, maxX = 0, maxY = 0;
@@ -328,6 +309,10 @@
           smoothUser.w = rawUserW;
         }
 
+        smoothCup.x += (rawCup.x - smoothCup.x) * CUP_SMOOTHING;
+        smoothCup.y += (rawCup.y - smoothCup.y) * CUP_SMOOTHING;
+        smoothCup.size += (rawCup.size - smoothCup.size) * CUP_SMOOTHING;
+
         smoothUser.cx += (rawUserCX - smoothUser.cx) * USER_SMOOTHING;
         smoothUser.cy += (rawUserCY - smoothUser.cy) * USER_SMOOTHING;
         smoothUser.w += (rawUserW - smoothUser.w) * USER_SMOOTHING;
@@ -339,7 +324,7 @@
 
         canvasCtx.save();
         canvasCtx.translate(targetX, targetY);
-        canvasCtx.scale(-scale, scale); // Reverses camera to act as mirror
+        canvasCtx.scale(-scale, scale); 
         canvasCtx.translate(-smoothUser.cx, -smoothUser.cy);
 
         canvasCtx.beginPath();
@@ -356,34 +341,42 @@
 
         canvasCtx.drawImage(results.image, 0, 0, vidW, vidH);
         canvasCtx.restore();
+
+      } else {
+        captureBtn.style.opacity = '0.3';
+        captureBtn.style.pointerEvents = 'none';
+        
+        if (isRecording) {
+            isRecording = false;
+            captureBtn.classList.remove('recording');
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+        }
       }
       
-      // 3. Draw Overlays DIRECTLY onto canvas so they save in the photo/video
-      // Draw Headline (with screen blend mode)
       if (headlineImg.complete && headlineImg.naturalWidth > 0) {
         canvasCtx.save();
         canvasCtx.globalCompositeOperation = 'screen';
-        const hlWidth = canvasElement.width * 0.85; 
+        const hlWidth = drawWidth * 0.80; 
         const hlHeight = hlWidth * (headlineImg.naturalHeight / headlineImg.naturalWidth);
-        canvasCtx.drawImage(headlineImg, (canvasElement.width - hlWidth) / 2, canvasElement.height * 0.25, hlWidth, hlHeight);
+        const hlX = startX + (drawWidth - hlWidth) / 2; 
+        const hlY = startY + (drawHeight * 0.25);       
+        canvasCtx.drawImage(headlineImg, hlX, hlY, hlWidth, hlHeight);
         canvasCtx.restore();
       }
 
-      // Draw Logo
       if (logoImg.complete && logoImg.naturalWidth > 0) {
         canvasCtx.save();
-        const lgWidth = canvasElement.width * 0.70; 
+        const lgWidth = drawWidth * 0.50; 
         const lgHeight = lgWidth * (logoImg.naturalHeight / logoImg.naturalWidth);
-        // Positioned lower down, adjusting based on height to stay off the very edge
-        canvasCtx.drawImage(logoImg, (canvasElement.width - lgWidth) / 2, canvasElement.height * 1.05 - lgHeight - 80, lgWidth, lgHeight);
+        const lgX = startX + (drawWidth - lgWidth) / 2; 
+        const lgY = startY + (drawHeight * 0.93) - lgHeight; 
+        canvasCtx.drawImage(logoImg, lgX, lgY, lgWidth, lgHeight);
         canvasCtx.restore();
       }
 
       canvasCtx.restore();
     });
 
-    // --- AUTO-START ---
-    // Start camera directly on load
     const camera = new Camera(videoElement, {
       onFrame: async () => {
         await webcamFaceMesh.send({image: videoElement});
@@ -393,15 +386,24 @@
       facingMode: "user"
     });
     
-    // Play background immediately
-    bgVideo.play().catch(e => console.log("Auto-play blocked by browser."));
-    camera.start().catch(e => console.log("Camera blocked by browser."));
+    // Attempt standard Autoplay
+    bgVideo.play().catch(e => console.log("Standard autoplay blocked"));
+    camera.start().catch(e => console.log("Camera blocked"));
 
-    // Fallback: If iOS Safari strictly blocks the camera/video on load without a user tap, 
-    // tapping anywhere on the screen will force it to start.
-    document.body.addEventListener('pointerdown', () => {
-      if (bgVideo.paused) bgVideo.play();
-    }, { once: true });
+    // --- BULLETPROOF IOS UNLOCK ---
+    // Safari demands the video play command is triggered by a human touch.
+    const unlockVideoOniOS = () => {
+      if (bgVideo.paused) {
+        bgVideo.play();
+      }
+      // Remove the listeners once unlocked
+      document.body.removeEventListener('touchstart', unlockVideoOniOS);
+      document.body.removeEventListener('click', unlockVideoOniOS);
+    };
+
+    // Bind to both touch and click for maximum compatibility
+    document.body.addEventListener('touchstart', unlockVideoOniOS, { once: true });
+    document.body.addEventListener('click', unlockVideoOniOS, { once: true });
 
   </script>
 </body>
