@@ -188,8 +188,33 @@
       }, 400);
     };
 
+    // Flag to prevent double-firing
+    let isCapturing = false;
+
+    function takePhoto() {
+      if (isCapturing) return; // Ignore if already capturing
+      isCapturing = true;
+
+      flash.style.opacity = '1';
+      setTimeout(() => { flash.style.opacity = '0'; }, 150);
+
+      const dataUrl = canvasElement.toDataURL('image/png');
+      const a = document.createElement('a');
+      a.href = dataUrl;
+      a.download = 'TopCafe_AR.png';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+
+      // Reset lock after 500ms
+      setTimeout(() => { isCapturing = false; }, 500);
+    }
+
     const handleRelease = (e) => {
-      e.preventDefault();
+      // Prevent browser from firing standard 'click' if we handled it as a pointer event
+      e.preventDefault(); 
+      e.stopPropagation(); 
+      
       clearTimeout(holdTimeout); 
       captureBtn.style.transform = 'scale(1)';
 
@@ -200,6 +225,7 @@
           mediaRecorder.stop();
         }
       } else {
+        // Only trigger photo if we weren't just recording
         takePhoto();
       }
     };
