@@ -26,13 +26,16 @@
     /* CRITICAL IOS FIX: Never use display: none for media elements! 
        Safari will pause them to save battery. We hide them with CSS positioning instead. */
     .hidden-media { 
-      position: absolute !important;
-      width: 1px !important;
-      height: 1px !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-      z-index: -9999 !important;
-    }
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  object-fit: cover !important;
+  opacity: 0.01 !important; /* Lowest value Safari considers "visible" */
+  pointer-events: none !important;
+  z-index: 1 !important; /* Above body background, but below canvas */
+}
 
     #flash {
       position: absolute;
@@ -430,7 +433,7 @@
         await bgVideo.play();
         console.log("✅ iOS video playing");
       } catch (err) {
-        console.log("❌ iOS play failed", e);
+        console.log("❌ iOS play failed", err);
       }
       // Remove the listeners once unlocked
       document.body.removeEventListener('touchstart', unlockVideoOniOS);
