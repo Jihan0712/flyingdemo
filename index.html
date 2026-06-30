@@ -45,7 +45,7 @@
     }
     #capture-btn-container {
       position: absolute;
-      bottom: 10%;
+      bottom: 8%;
       left: 15%;
       transform: translateX(-50%);
       z-index: 100;
@@ -115,6 +115,11 @@
   <script>
     const videoElement = document.getElementById('input_video');
     const bgVideo = document.getElementById('bg_video');
+    // Force iOS compatibility
+    bgVideo.muted = true;
+    bgVideo.playsInline = true;
+    bgVideo.setAttribute("playsinline", "");
+    bgVideo.setAttribute("webkit-playsinline", "");
     const canvasElement = document.getElementById('output_canvas');
     const canvasCtx = canvasElement.getContext('2d', { willReadFrequently: true });
     
@@ -418,9 +423,14 @@
 
     // --- BULLETPROOF IOS UNLOCK ---
     // Safari demands the video play command is triggered by a human touch.
-    const unlockVideoOniOS = () => {
-      if (bgVideo.paused) {
+    const unlockVideoOniOS = async () => {
+      try {
         bgVideo.play();
+        await new Promise(res => setTimeout(res, 50));
+        await bgVideo.play();
+        console.log("✅ iOS video playing");
+      } catch (err) {
+        console.log("❌ iOS play failed", e);
       }
       // Remove the listeners once unlocked
       document.body.removeEventListener('touchstart', unlockVideoOniOS);
