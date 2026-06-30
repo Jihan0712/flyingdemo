@@ -21,21 +21,23 @@
       width: 100vw; 
       height: 100vh; 
       object-fit: cover; 
+      position: relative;
+      z-index: 10;
     }
     
     /* CRITICAL IOS FIX: Never use display: none for media elements! 
        Safari will pause them to save battery. We hide them with CSS positioning instead. */
     .hidden-media { 
-  position: fixed !important;
-  top: 0 !important;
-  left: 0 !important;
-  width: 100vw !important;
-  height: 100vh !important;
-  object-fit: cover !important;
-  opacity: 0.01 !important; /* Lowest value Safari considers "visible" */
-  pointer-events: none !important;
-  z-index: 1 !important; /* Above body background, but below canvas */
-}
+      position: fixed !important;
+      top: 0 !important;
+      left: 0 !important;
+      width: 100vw !important;
+      height: 100vh !important;
+      object-fit: cover !important;
+      opacity: 0.01 !important; /* Lowest value Safari considers "visible" */
+      pointer-events: none !important;
+      z-index: 1 !important; /* Above body background, but below canvas */
+    }
 
     #flash {
       position: absolute;
